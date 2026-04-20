@@ -178,11 +178,32 @@
                         <label class="text-[10px] font-black text-orange-400 uppercase italic tracking-widest">Specs DNA &amp; Logbook</label>
                         <span id="m-rego-display" class="bg-orange-600 text-white px-3 py-1 rounded-lg font-black text-xs uppercase tracking-widest">REGO</span>
                     </div>
-                    <div class="grid grid-cols-3 gap-3">
+                    <div class="grid grid-cols-3 gap-3 mb-3">
                         <input type="text" id="m-make"     placeholder="Make"       class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-white font-bold outline-none text-sm">
                         <input type="text" id="m-model"    placeholder="Model"      class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-white font-bold outline-none text-sm">
                         <input type="text" id="m-capacity" placeholder="Engine Cap" class="bg-slate-900 p-3 rounded-xl border border-slate-800 text-red-400 font-black outline-none text-sm">
                     </div>
+                    
+                    <div class="flex items-center gap-3 p-3 bg-slate-900 rounded-xl border border-slate-800 mb-3">
+                        <div class="flex-1">
+                            <p class="text-[9px] font-black uppercase text-slate-500 mb-1">Customer Odometer (Km)</p>
+                            <input type="number" id="m-km" placeholder="e.g. 150000" oninput="calcKmTotal()" class="w-full bg-slate-950 p-2 rounded-lg border border-slate-800 text-white font-mono text-xs outline-none">
+                        </div>
+                        <div class="shrink-0 pt-4 text-slate-500 font-bold px-1">+</div>
+                        <div class="w-24 shrink-0">
+                            <p class="text-[9px] font-black uppercase text-slate-500 mb-1">Interval</p>
+                            <select id="m-km-interval" onchange="calcKmTotal()" class="w-full bg-slate-950 p-2 rounded-lg border border-slate-800 text-white font-mono text-xs outline-none">
+                                <option value="5000">5k</option>
+                                <option value="10000" selected>10k</option>
+                                <option value="15000">15k</option>
+                            </select>
+                        </div>
+                        <div class="flex-1 text-right">
+                            <p class="text-[9px] font-black uppercase text-green-500 mb-1">Next Service Due at</p>
+                            <p id="m-km-result" class="text-lg font-black text-white italic">—</p>
+                        </div>
+                    </div>
+                    
                     <!-- Logbook appended here -->
                     <div class="pt-3 border-t border-slate-800">
                         <p class="text-[9px] font-black text-yellow-500 uppercase tracking-widest mb-2">Vehicle Logbook</p>
@@ -976,7 +997,11 @@ function openManage(id) {
     document.getElementById('m-capacity').value    = v.capacity|| '';
     document.getElementById('m-labour').value      = j.labour || 0;
     document.getElementById('m-report').value      = j.report || '';
+    document.getElementById('m-km').value          = j.km || '';
+    document.getElementById('m-km-interval').value = j.kmInterval || '10000';
     document.getElementById('m-vinfo-new').value   = '';
+    
+    calcKmTotal();
 
     setJobStatus(j.status || 'Unstarted');
     buildFeeSelect();
@@ -1006,6 +1031,8 @@ function updateJob(e) {
     j.status = document.getElementById('m-job-status').value;
     j.labour = parseFloat(document.getElementById('m-labour').value || 0);
     j.report = document.getElementById('m-report').value;
+    j.km = document.getElementById('m-km').value;
+    j.kmInterval = document.getElementById('m-km-interval').value;
     v.make     = document.getElementById('m-make').value;
     v.model    = document.getElementById('m-model').value;
     v.capacity = document.getElementById('m-capacity').value;
@@ -1034,6 +1061,17 @@ function saveInvestBudget(val) {
     db.investmentBudget = parseFloat(val) || 0;
     sync();
     renderData();
+}
+
+function calcKmTotal() {
+    const kmVal = parseFloat(document.getElementById('m-km').value);
+    const intervalVal = parseFloat(document.getElementById('m-km-interval').value);
+    const resultEl = document.getElementById('m-km-result');
+    if (isNaN(kmVal)) {
+        resultEl.innerText = '—';
+    } else {
+        resultEl.innerText = (kmVal + intervalVal).toLocaleString() + ' Km';
+    }
 }
 
 // ─── PHOTO EVIDENCE ─────────────────────────────────────────────────────────────
@@ -1192,7 +1230,15 @@ function openCustomerProfile(n) {
             <i class="fas fa-car mr-2 text-xs"></i>${r}
         </button>`
     ).join('');
+    
+    const nameEscaped = n.replace(/'/g,"\\'");
+    const phoneSafe = (jobs[0].phone || '').replace(/'/g,"\\'");
+    const emailSafe = (jobs[0].email || '').replace(/'/g,"\\'");
+    
     document.getElementById('p-dynamic-content').innerHTML = `
+        <button type="button" onclick="createNewBookingFromProfile('${nameEscaped}', '${phoneSafe}', '${emailSafe}', '')" class="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-4 py-4 rounded-3xl transition-all mb-6 shadow-2xl tracking-widest text-center">
+            <i class="fas fa-calendar-plus mr-2 text-lg align-middle"></i> Reschedule Next Booking
+        </button>
         <div class="grid grid-cols-2 gap-6">
             <div class="p-8 bg-slate-950 rounded-3xl border border-slate-800">
                 <p class="text-[9px] font-black text-slate-500 uppercase mb-3">Contact</p>
@@ -1223,7 +1269,16 @@ function openVehicleProfile(rego) {
         </div>`;
     }
 
+    const regoSafe = rego.replace(/'/g,"\\'");
+    const nameEscaped = (ownerName || '').replace(/'/g,"\\'");
+    const lastJob = jobs[0] || {};
+    const phoneSafe = (lastJob.phone || '').replace(/'/g,"\\'");
+    const emailSafe = (lastJob.email || '').replace(/'/g,"\\'");
+
     document.getElementById('p-dynamic-content').innerHTML = `
+        <button type="button" onclick="createNewBookingFromProfile('${nameEscaped}', '${phoneSafe}', '${emailSafe}', '${regoSafe}')" class="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase text-xs px-4 py-4 rounded-3xl transition-all mb-6 shadow-2xl tracking-widest text-center">
+            <i class="fas fa-calendar-plus mr-2 text-lg align-middle"></i> Reschedule Next Booking
+        </button>
         <div class="grid grid-cols-4 gap-4 mb-2">
             <div class="p-6 bg-slate-950 rounded-3xl border border-slate-800 text-center"><p class="text-[9px] font-black text-slate-500 uppercase">Make</p><p class="text-white font-black mt-2">${v.make||'—'}</p></div>
             <div class="p-6 bg-slate-950 rounded-3xl border border-slate-800 text-center"><p class="text-[9px] font-black text-slate-500 uppercase">Model</p><p class="text-white font-black mt-2">${v.model||'—'}</p></div>
@@ -1656,7 +1711,7 @@ function openFinancialBreakdown(type) {
             const lab = parseFloat(j.labour || 0);
             if (lab > 0) {
                 total += lab;
-                tb.innerHTML += `<tr class="hover:bg-slate-800 transition-colors">
+                tb.innerHTML += `<tr class="hover:bg-slate-800 transition-colors cursor-pointer" onclick="closeModal(); openManage('${j.jobNo}')">
                     <td class="p-4 text-slate-500 font-bold text-[10px]">${j.date}</td>
                     <td class="p-4 text-slate-300 font-mono text-[10px]">${j.jobNo}</td>
                     <td class="p-4 text-white font-black uppercase">${j.rego}</td>
@@ -1679,7 +1734,7 @@ function openFinancialBreakdown(type) {
                 const markup = (p.qty * p.sellPrice) - (p.qty * p.cost);
                 if (markup !== 0) {
                     total += markup;
-                    tb.innerHTML += `<tr class="hover:bg-slate-800 transition-colors">
+                    tb.innerHTML += `<tr class="hover:bg-slate-800 transition-colors cursor-pointer" onclick="closeModal(); openManage('${j.jobNo}')">
                         <td class="p-4"><p class="text-slate-300 font-mono text-[10px]">${j.jobNo}</p><p class="text-slate-500 font-bold text-[9px]">${j.date}</p></td>
                         <td class="p-4 text-white font-bold text-[10px]">${p.desc} <span class="text-slate-500 ml-1">x${p.qty}</span></td>
                         <td class="p-4 text-center text-slate-400 font-mono text-[9px]">$${p.cost} &rarr; $${p.sellPrice}</td>
@@ -1701,7 +1756,7 @@ function openFinancialBreakdown(type) {
             const lab = parseFloat(j.labour || 0);
             const markup = (j.parts || []).reduce((ps, p) => ps + (p.qty * p.sellPrice - p.qty * p.cost), 0);
             const profit = lab + markup;
-            tb.innerHTML += `<tr class="hover:bg-slate-800 transition-colors cursor-pointer" onclick="openManage('${j.jobNo}')">
+            tb.innerHTML += `<tr class="hover:bg-slate-800 transition-colors cursor-pointer" onclick="closeModal(); openManage('${j.jobNo}')">
                 <td class="p-4 text-slate-500 font-bold text-[10px]">${j.date}</td>
                 <td class="p-4 text-slate-300 font-mono text-[10px]">${j.jobNo}</td>
                 <td class="p-4 text-white font-bold text-[10px]">${j.name}</td>
@@ -1819,6 +1874,22 @@ function renderBudgetPeriodChart(jobs) {
         }
     };
     window.budgetChart = new Chart(ctx.getContext('2d'), config);
+}
+
+function createNewBookingFromProfile(name, phone, email, rego) {
+    closeModal();
+    showView('bookings');
+    document.getElementById('b-name').value = name || '';
+    document.getElementById('b-phone').value = phone || '';
+    document.getElementById('b-email').value = email || '';
+    document.getElementById('b-rego').value = rego || '';
+    
+    // Auto-set date to today
+    const dInput = document.getElementById('b-date');
+    if (!dInput.value) {
+        dInput.value = new Date().toISOString().split('T')[0];
+    }
+    updateAvailableTimes();
 }
 
 // ─── INIT ────────────────────────────────────────────────────────────────────
