@@ -2030,4 +2030,266 @@ function renderBudgetPeriodChart(jobs) {
                     backgroundColor: type === 'line' ? 'rgba(59, 130, 246, 0.1)' : '#3b82f6',
                     borderColor: '#3b82f6',
                     fill: type === 'line',
-                    tension: 
+                    tension: 0.4
+                },
+                {
+                    label: 'Markup',
+                    data: dataMark,
+                    backgroundColor: type === 'line' ? 'rgba(249, 115, 22, 0.1)' : '#f97316',
+                    borderColor: '#f97316',
+                    fill: type === 'line',
+                    tension: 0.4
+                }
+            ]
+        },
+        options: {
+            maintainAspectRatio: false,
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: budgetFilter === 'day' ? 'bottom' : 'top',
+                    labels: { color: '#94a3b8', font: { weight: 'bold', size: 10 } }
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: { label: (ctx) => ctx.dataset.label ? ctx.dataset.label + ': $' + ctx.raw.toFixed(2) : '$' + ctx.raw.toFixed(2) }
+                }
+            },
+            scales: budgetFilter === 'day' ? {} : {
+                x: { stacked: type === 'bar', grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: {size: 10} } },
+                y: { stacked: type === 'bar', grid: { color: '#1e293b' }, ticks: { color: '#64748b', callback: v => '$' + v, font: {size: 10} }, beginAtZero: true }
+            }
+        }
+    };
+    window.budgetChart = new Chart(ctx.getContext('2d'), config);
+}
+
+function createNewBookingFromProfile(name, phone, email, rego) {
+    closeModal();
+    showView('bookings');
+    document.getElementById('b-name').value = name || '';
+    document.getElementById('b-phone').value = phone || '';
+    document.getElementById('b-email').value = email || '';
+    document.getElementById('b-rego').value = rego || '';
+    
+    // Auto-set date to today
+    const dInput = document.getElementById('b-date');
+    if (!dInput.value) {
+        dInput.value = new Date().toISOString().split('T')[0];
+    }
+    updateAvailableTimes();
+}
+
+function generateInvoice() {
+    const id = document.getElementById('m-job-id').value;
+    const j = db.jobs.find(x => x.jobNo === id);
+    if (!j) return;
+    const v = db.vehicles[j.rego] || {};
+
+    document.getElementById('inv-job-display').innerText = `Job ${j.jobNo} — ${j.rego}`;
+    document.getElementById('inv-date').innerText = j.date;
+    document.getElementById('inv-no').innerText = j.jobNo;
+    document.getElementById('inv-cust-name').innerText = j.name || '—';
+    document.getElementById('inv-cust-phone').innerText = j.phone || '—';
+    document.getElementById('inv-cust-email').innerText = j.email || '—';
+    
+    document.getElementById('inv-rego').innerText = j.rego;
+    document.getElementById('inv-make-model').innerText = `${v.make || ''} ${v.model || ''}${v.capacity ? ' — Engine: ' + v.capacity : ''}`;
+    
+    // Next Service Due (replaces odometer)
+    const nsEl = document.getElementById('inv-next-service');
+    if (j.km) {
+        const interval = parseFloat(j.kmInterval || 10000);
+        const nextKm = parseFloat(j.km) + interval;
+        nsEl.innerText = '✓ Next Service Due at: ' + nextKm.toLocaleString() + ' Km';
+    } else {
+        nsEl.innerText = '';
+    }
+
+    const tbody = document.getElementById('inv-tbody');
+    tbody.innerHTML = '';
+    let partsTotal = 0;
+    (j.parts || []).forEach(p => {
+        const lineTotal = p.qty * p.sellPrice;
+        partsTotal += lineTotal;
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50">
+                <td class="p-3 py-4">${p.desc}</td>
+                <td class="p-3 py-4 text-center">${p.qty}</td>
+                <td class="p-3 py-4 text-right">$${p.sellPrice.toFixed(2)}</td>
+                <td class="p-3 py-4 text-right">$${lineTotal.toFixed(2)}</td>
+            </tr>`;
+    });
+    if (!j.parts || !j.parts.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-400 italic">No parts applied</td></tr>`;
+    }
+
+    const labour = parseFloat(j.labour || 0);
+    document.getElementById('inv-parts-total').innerText = '$' + partsTotal.toFixed(2);
+    document.getElementById('inv-labour-total').innerText = '$' + labour.toFixed(2);
+    document.getElementById('inv-grand-total').innerText = '$' + (partsTotal + labour).toFixed(2);
+
+    // Technical Report / Work Notes
+    const notesSection = document.getElementById('inv-notes-section');
+    const repEl = document.getElementById('inv-report');
+    if (j.report && j.report.trim()) {
+        repEl.innerText = j.report;
+        notesSection.style.display = 'block';
+    } else {
+        notesSection.style.display = 'none';
+    }
+
+    // Photo Evidence
+    const photosSection = document.getElementById('inv-photos-section');
+    const photosGrid = document.getElementById('inv-photos-grid');
+    const photos = j.photos || [];
+    if (photos.length) {
+        photosGrid.innerHTML = photos.map(src => `<img src="${src}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;border:1px solid #e2e8f0;">`).join('');
+        photosSection.style.display = 'block';
+    } else {
+        photosSection.style.display = 'none';
+    }
+
+    const emailBtn = document.getElementById('inv-email-btn');
+    if (j.email) {
+        emailBtn.classList.remove('hidden');
+        emailBtn.href = `mailto:${j.email}?subject=Tax Invoice - Job ${j.jobNo}&body=Hi ${j.name || ''},%0D%0A%0D%0APlease find your invoice for Job ${j.jobNo} attached to this email.%0D%0A%0D%0AThank you for choosing Saturday Hobby Auto!`;
+    } else {
+        emailBtn.classList.add('hidden');
+    }
+
+    document.getElementById('invoiceModal').classList.add('active');
+}
+
+// ─── BOOKING EDIT / RESCHEDULE ───────────────────────────────────────────────
+function openEditBooking(jobNo) {
+    const j = db.jobs.find(x => x.jobNo === jobNo);
+    if (!j) return;
+    document.getElementById('eb-jobno').value    = jobNo;
+    document.getElementById('eb-date').value     = j.date || '';
+    document.getElementById('eb-time').value     = j.time || '';
+    document.getElementById('eb-name').value     = j.name || '';
+    document.getElementById('eb-phone').value    = j.phone || '';
+    document.getElementById('eb-email').value    = j.email || '';
+    document.getElementById('eb-rego').value     = j.rego || '';
+    document.getElementById('eb-report').value   = j.report || '';
+    document.getElementById('eb-title').innerText = `Edit Booking — ${jobNo}`;
+    document.getElementById('eb-reschedule-only').style.display = 'none';
+    document.getElementById('eb-full-form').style.display = 'block';
+    document.getElementById('editBookingModal').classList.add('active');
+}
+
+function openRescheduleDate(jobNo) {
+    const j = db.jobs.find(x => x.jobNo === jobNo);
+    if (!j) return;
+    document.getElementById('eb-jobno').value     = jobNo;
+    document.getElementById('eb-date-rs').value   = j.date || '';
+    document.getElementById('eb-time-rs').value   = j.time || '';
+    document.getElementById('eb-title').innerText  = `Reschedule — ${jobNo} (${j.name})`;
+    document.getElementById('eb-reschedule-only').style.display = 'block';
+    document.getElementById('eb-full-form').style.display = 'none';
+    document.getElementById('editBookingModal').classList.add('active');
+}
+
+function saveBookingEdit(e) {
+    e.preventDefault();
+    const jobNo = document.getElementById('eb-jobno').value;
+    const j = db.jobs.find(x => x.jobNo === jobNo);
+    if (!j) return;
+    j.date   = document.getElementById('eb-date').value;
+    j.time   = document.getElementById('eb-time').value;
+    j.name   = document.getElementById('eb-name').value;
+    j.phone  = document.getElementById('eb-phone').value;
+    j.email  = document.getElementById('eb-email').value;
+    j.rego   = document.getElementById('eb-rego').value;
+    j.report = document.getElementById('eb-report').value;
+    sync();
+    document.getElementById('editBookingModal').classList.remove('active');
+    renderData();
+}
+
+function saveRescheduleOnly() {
+    const jobNo = document.getElementById('eb-jobno').value;
+    const j = db.jobs.find(x => x.jobNo === jobNo);
+    if (!j) return;
+    const newDate = document.getElementById('eb-date-rs').value;
+    const newTime = document.getElementById('eb-time-rs').value;
+    if (!newDate) { alert('Please select a new date.'); return; }
+    j.date = newDate;
+    if (newTime) j.time = newTime;
+    sync();
+    document.getElementById('editBookingModal').classList.remove('active');
+    renderData();
+}
+
+// ─── INIT ────────────────────────────────────────────────────────────────────
+window.onload  = () => { lockSystem(); showView('dashboard'); };
+window.onclick = (e) => { if(e.target.classList.contains('modal')) closeModal(); };
+</script>
+
+<!-- ── EDIT / RESCHEDULE BOOKING MODAL ─────────────────────────────── -->
+<div id="editBookingModal" class="modal" style="z-index:99000;">
+    <div class="bg-slate-900 w-full max-w-xl rounded-[40px] border border-slate-800 shadow-2xl p-10 relative">
+        <button onclick="document.getElementById('editBookingModal').classList.remove('active')" class="absolute top-8 right-8 text-3xl text-slate-500 hover:text-white">&times;</button>
+        <input type="hidden" id="eb-jobno">
+        <h3 id="eb-title" class="text-2xl font-black uppercase italic text-white mb-8">Edit Booking</h3>
+
+        <!-- Reschedule Only (date + time) -->
+        <div id="eb-reschedule-only" class="space-y-6">
+            <div class="p-5 bg-blue-900/20 border border-blue-700/40 rounded-3xl">
+                <p class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-4"><i class="fas fa-calendar-alt mr-1"></i> Reschedule Date &amp; Time</p>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-[9px] font-black text-slate-500 uppercase">New Date</label>
+                        <input type="date" id="eb-date-rs" class="w-full mt-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-white font-bold outline-none text-sm">
+                    </div>
+                    <div>
+                        <label class="text-[9px] font-black text-slate-500 uppercase">New Time</label>
+                        <input type="time" id="eb-time-rs" class="w-full mt-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-white font-bold outline-none text-sm">
+                    </div>
+                </div>
+            </div>
+            <button onclick="saveRescheduleOnly()" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-xl"><i class="fas fa-calendar-check mr-2"></i>Confirm Reschedule</button>
+        </div>
+
+        <!-- Full Edit Form -->
+        <form id="eb-full-form" onsubmit="saveBookingEdit(event)" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase">Date</label>
+                    <input type="date" id="eb-date" class="w-full mt-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-white font-bold outline-none text-sm">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase">Time</label>
+                    <input type="time" id="eb-time" class="w-full mt-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-white font-bold outline-none text-sm">
+                </div>
+            </div>
+            <div>
+                <label class="text-[9px] font-black text-slate-500 uppercase">Customer Name</label>
+                <input type="text" id="eb-name" class="w-full mt-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-white font-bold outline-none text-sm">
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase">Phone</label>
+                    <input type="tel" id="eb-phone" class="w-full mt-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-white outline-none text-sm">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-slate-500 uppercase">Email</label>
+                    <input type="email" id="eb-email" class="w-full mt-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-white outline-none text-sm">
+                </div>
+            </div>
+            <div>
+                <label class="text-[9px] font-black text-slate-500 uppercase">Plate / Rego</label>
+                <input type="text" id="eb-rego" class="w-full mt-1 bg-slate-950 p-4 rounded-2xl border-2 border-dashed border-slate-700 text-center text-2xl font-black text-orange-500 uppercase outline-none">
+            </div>
+            <div>
+                <label class="text-[9px] font-black text-slate-500 uppercase">Service Notes</label>
+                <textarea id="eb-report" rows="3" class="w-full mt-1 bg-slate-950 p-3 rounded-xl border border-slate-800 text-white outline-none text-sm italic"></textarea>
+            </div>
+            <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs transition-all shadow-xl"><i class="fas fa-save mr-2"></i>Save Changes</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>
